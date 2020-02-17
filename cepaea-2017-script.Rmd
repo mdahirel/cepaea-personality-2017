@@ -1,0 +1,77 @@
+---
+title: "Cepaea 2017"
+author: 
+  - "**Maxime Dahirel** (script author)"
+  - Valentin Gaudu
+  - Armelle Ansart
+date: "13/02/2020"
+output: 
+  html_document:
+    theme: yeti
+    toc: TRUE
+    toc_float: TRUE
+    code_download: TRUE
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+(NB: A "classical" .R script version is also available in the same folder as this file, for readers who'd rather use that. That version is much less commented, but both run the same analyses)
+
+
+## **Introduction**
+
+
+(see manuscript for details)
+
+
+## **Starters and data wrangling**
+First, let's load the packages we'll need:
+
+```{r load-packages}
+library(here)
+library(arm)
+library(matrixStats)
+library(tidyverse)
+library(rstan)
+library(tidybayes)
+library(bayesplot)
+library(brms)
+library(patchwork)
+rstan_options(auto_write = TRUE)
+options(mc.cores = 2)
+```
+
+Now we load the raw data files:
+```{r load-raw-datafiles}
+## Load raw dataset
+```
+
+
+
+
+## **Main model**
+
+Now, let's fit our main model (please see description in the methods and supplementary material of the paper).
+
+
+
+## **Making figures**
+
+(Fig. 1 is a shell photograph, so we start at Fig.2 for data plots)
+
+### Figure 2
+
+
+### Figure 3
+
+
+### Figure 4
+
+
+## **Supplementary Materials**
+
+We also present a model in Supplementary Materials. 

@@ -34,6 +34,7 @@ First, let's load the packages we'll need:
 ```{r load-packages}
 library(here)
 library(arm)
+library(modelr)  #for seq_range
 library(matrixStats)
 library(tidyverse)
 library(rstan)
@@ -75,12 +76,12 @@ data<-data %>%
 data<-data %>% 
   mutate(s_temp = scale(temperature), #centred and scaled
          c_order.temp = order.temp - 2.5, ## center without scaling
-         c_order.b <- tab$order.b - 1.5, ## same
-         c_landscape <- -0.5 + as.numeric(landscape == "Marais"), ## same
+         c_order.b = order.b - 1.5, ## same
+         c_landscape = -0.5 + as.numeric(landscape == "Marais"), ## same
          ##recoding
-         is0b=(band_genotype=="0b")-mean(band_genotype=="0b"),
-         is3b=(band_genotype=="3b")-mean(band_genotype=="3b"),
-         is5b=(band_genotype=="5b")-mean(band_genotype=="5b")
+         is0b=(band_phenotype=="0b")-mean(band_phenotype=="0b"),
+         is3b=(band_phenotype=="3b")-mean(band_phenotype=="3b"),
+         is5b=(band_phenotype=="5b")-mean(band_phenotype=="5b")
 )
 
 mean_temp <- attr(data$s_temp, "scaled:center")
@@ -93,9 +94,9 @@ sd_temp <- attr(data$s_temp, "scaled:scale")
 ### don't worry, dummy values will be ignored during fitting
 
 data <- data %>% 
-  mutate(is.valid.bold <- as.numeric(is.na(tab$boldness) == FALSE), ### if it's not NA, it's valid,
-         censored_bold2 <- rep(censored_bold[1:720], rep(1,720)),
-         boldness2 <- c(boldness[1:720], rep(1200, 720)) 
+  mutate(is.valid.bold = as.numeric(is.na(boldness) == FALSE), ### if it's not NA, it's valid,
+         censored_bold2 = c(censored_bold[1:720], rep(1,720)),
+         boldness2 = c(boldness[1:720], rep(1200, 720)) 
          ### and we fill the cells that won't be used with dummy values
   )
 ```
@@ -109,10 +110,10 @@ Now, let's fit our main model (please see description in the methods and supplem
 ####FORMULAS
 
 bf_explo <- bf(fpt |cens(censored_fpt) ~ ((is3b+is5b) * c_landscape) * s_temp + c_order.temp +
-                    (s_temp | p | box) + (s_temp | q | id), sigma ~ 1, family = lognormal(link_sigma="identity"))
+                    (s_temp | p | box) + (s_temp | q | id), family = lognormal)
 
 bf_boldness <- bf(boldness2 | subset(is.valid.bold) + cens(censored_bold2) ~ (is3b+is5b) * c_landscape + c_order.b +
-                    (1 | p | box) + (1 | q | id), sigma ~ 1, family = lognormal(link_sigma="identity")) ##when sigma not modeled link is identity (half prior?)
+                    (1 | p | box) + (1 | q | id), family = lognormal) ##when sigma not modeled link is identity (half prior?)
 
 
 ### PRIOR
@@ -120,8 +121,8 @@ prior_multi <- c(
   set_prior("normal(0, 1)", class = "b",resp=c("boldness2","fpt")), ##### Fixed effects; weakly informative prior for response centred and scaled
   set_prior("normal(log(400),0.5)",class=c("Intercept"),resp=c("boldness2","fpt")),
   set_prior("lkj(2)", class = "cor"),
-  set_prior("exponential(1)",class = "sd",resp=c("boldness2","fpt")),
-  set_prior("exponential(1)",dpar = "sigma",resp=c("boldness2","fpt"),class="Intercept")
+  set_prior("normal(0,1)",class = "sd",resp=c("boldness2","fpt")),
+  set_prior("normal(0,1)",class = "sigma",resp=c("boldness2","fpt"))
 )
 
 ### fit models ##NB: the sampler may throw initialization errors at the beginning because it evaluates loglik at log(0)
@@ -130,7 +131,7 @@ prior_multi <- c(
 
 ###FITTING
 mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
-              data = tab, chains=N_chains/2, iter = N_iter/100, warmup = N_warmup/100, thin = N_thin, prior = prior_multi, seed = 42,
+              data = data, chains=N_chains/2, iter = N_iter/100, warmup = N_warmup/100, thin = N_thin, prior = prior_multi, seed = 42,
               control=list(adapt_delta = 0.95,max_treedepth=15) #,save_ranef=FALSE
 )
 
@@ -141,10 +142,107 @@ mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
 
 ## **Making figures**
 
-(Fig. 1 is a shell photograph, so we start at Fig.2 for data plots)
+(Fig. 1 is a set of photographs, so we start at Fig.2 for data plots)
 
 ### Figure 2
 
+```{r figure-2}
+### PLOTS
+##### representing predictions on plots
+## at average temperatures (everything else except phenotype is averaged out)
+
+newdata <- data %>% 
+  select(band_phenotype,is3b,is5b) %>% 
+  distinct() %>% 
+  mutate(s_temp = 0, 
+         c_order.b = 0, c_order.temp = 0, 
+         c_landscape = 0, 
+         id = data$id[1], 
+         box = data$box[1],
+         is.valid.bold=1) %>%
+  add_fitted_draws(model = mod, re_formula = NA, scale="linear",resp=c("boldness2")) %>%
+  ### scale="response" seems to give the mean on the response scale, but I'd like the median; more representative for a lognormal
+  ### so I use scale = "linear" (gives the mean on the log scale, so the median on the response scale)
+  ### and I'll back-transform after
+  mutate(lboldness = .value) %>% 
+  select(-(.value))
+
+newdata2 <- data %>% 
+  select(band_phenotype,is3b,is5b) %>% 
+  distinct() %>% 
+  mutate(s_temp = 0, 
+         c_order.b = 0, c_order.temp = 0, 
+         c_landscape = 0, 
+         id = data$id[1], 
+         box = data$box[1],
+         is.valid.bold=1) %>%
+  add_fitted_draws(model = mod, re_formula = NA, scale = "linear",resp=c("fpt")) %>%
+  mutate(lfpt = .value) %>% 
+  select(-(.value))
+
+newdata<-inner_join(newdata,newdata2) ; rm(newdata2)
+
+#### to do: need to separate speed and boldness in two tables, add means, backtransform, mise en page
+### for boldness
+fig_2a <- filter(data,is.na(boldness)==FALSE) %>% 
+  ggplot() +
+  geom_hline(yintercept=1200,lty=2)+
+  geom_line(aes(x = as.numeric(factor(band_phenotype))+0.8*c_order.b, y=boldness, group=id),col = "grey", show.legend = FALSE,alpha=0.4) +
+  geom_violin(data=newdata,aes(y = exp(lboldness), x = band_phenotype, fill = band_phenotype),draw_quantiles = 0.5, show.legend = FALSE,alpha=0.8) +
+  scale_fill_brewer(palette = "YlOrBr", direction = 1) +
+  scale_y_log10(name = "Boldness (latency, sec)", limits = c(3, 1200), breaks = c(5, 10, 20, 50, 100, 200, 500, 1000)) +
+  scale_x_discrete(name = "Shell phenotype", labels = c("0 bands", "3 bands", "5 bands")) +
+  theme_cowplot()
+
+
+###arrow_bold
+arrow_bold=ggplot()+
+  geom_segment(aes(x=c(0,0),xend=c(0,0),y=c(0.05,0.95),yend=c(0.95,0.05)),arrow=arrow())+
+  geom_text(aes(x=c(0,0),y=c(0,1),label=c("bolder","shyer")))+theme_void()
+
+###arrow_speed
+arrow_speed=ggplot()+
+  geom_segment(aes(x=c(0,0),xend=c(0,0),y=c(0.05,0.95),yend=c(0.95,0.05)),arrow=arrow())+
+  geom_text(aes(x=c(0,0),y=c(0,1),label=c("faster","slower")))+theme_void()
+
+### for speeds
+fig_2b <- ggplot(data = data) + 
+  geom_hline(yintercept=1200,lty=2)+
+  geom_line(aes(x = as.numeric(factor(band_phenotype))+0.3*s_temp,fpt, group=id),col = "grey", show.legend = FALSE,alpha=0.4) +
+  geom_violin(data=newdata, aes(y = exp(lfpt), x = band_phenotype, fill = band_phenotype),draw_quantiles = 0.5, show.legend = FALSE, alpha= 0.8) +
+  scale_fill_brewer(palette = "YlOrBr", direction = 1) +
+  scale_y_log10(name = "Exploration (first passage time, sec)", limits = c(250, 1200), breaks = c(250, 500, 750, 1000)) +
+  scale_x_discrete(name = "Shell phenotype", labels = c("0 bands", "3 bands", "5 bands")) +
+  #geom_line(data = tab, aes(x = band_genotype, y = fpt,group=id), position=position_dodge(width = 0.9),col = "grey", show.legend = FALSE,alpha=0.3)+
+  theme_cowplot()
+
+
+
+#########PLOT 3 
+## at temperatures range (everything else is averaged out)
+fig_2c <- expand_grid(Temperature = c(15:25), 
+              c_order.b = 0, 
+              c_order.temp = 0, 
+              c_landscape = 0, 
+              id = data$id[1], 
+              box = data$box[1],
+              is3b = 0,
+              is5b = 0,
+              is.valid.bold=1) %>%
+  mutate(s_temp = (Temperature-mean_temp)/sd_temp) %>%
+  add_fitted_draws(model = mod, re_formula = NA,scale = "linear",resp="fpt") %>%
+  mutate(lfpt = .value) %>% 
+ggplot()+
+  geom_hline(yintercept=1200,lty=2)+
+  geom_line(data = data, aes(x = temperature, y = fpt,group=id), col = "grey", show.legend = FALSE,alpha=0.3) + 
+  stat_lineribbon(aes(x = Temperature,y = exp(lfpt)), .width = 0.95,show.legend=FALSE,fill="pink", alpha= 0.8) +
+  scale_y_log10(name = "", limits = c(250, 1200),breaks = c(250, 500, 750, 1000)) +
+  scale_x_continuous(name = "Test temperature (°C)", limits = c(14, 26)) +
+  theme_cowplot()
+
+arrow_bold + fig_2a + plot_spacer() + arrow_speed + fig_2b + fig_2c + plot_layout(nrow = 2, widths= c(1,5,5)) + plot_annotation(tag_levels="A")
+
+```
 
 ### Figure 3
 

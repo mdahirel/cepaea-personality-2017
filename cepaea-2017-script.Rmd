@@ -57,15 +57,16 @@ Now we load the data files:
 ```{r load-datafiles}
 ## Load main dataset
 
-data <- read_csv("./cepaea-2017-dataset.csv")
+data0 <- read_csv("./cepaea-2017-dataset.csv")
 
-### to do: add the abundance dataset for the supplementary
+data_shells0 <- read_csv("./cepaea-2018-shells.csv")
+
 ```
 
 
 ```{r data-wrangling-censoring}
 
-data<-data %>% 
+data<-data0 %>% 
   mutate(censored_fpt = as.numeric(fpt>=1200),
          censored_bold = as.numeric(boldness >= 1200)
   )
@@ -74,7 +75,7 @@ data<-data %>%
 ```{r data-wrangling-recoding}
 
 data<-data %>% 
-  mutate(s_temp = scale(temperature), #centred and scaled
+  mutate(s_temp = scale(temperature)[,1], #centred and scaled
          c_order.temp = order.temp - 2.5, ## center without scaling
          c_order.b = order.b - 1.5, ## same
          c_landscape = -0.5 + as.numeric(landscape == "Marais"), ## same
@@ -84,8 +85,8 @@ data<-data %>%
          is5b=(band_phenotype=="5b")-mean(band_phenotype=="5b")
 )
 
-mean_temp <- attr(data$s_temp, "scaled:center")
-sd_temp <- attr(data$s_temp, "scaled:scale")
+mean_temp <- attr(scale(data$temperature), "scaled:center")
+sd_temp <- attr(scale(data$temperature), "scaled:scale")
 ```
 
 ```{r data-wrangling-subset}
@@ -125,20 +126,47 @@ prior_multi <- c(
   set_prior("normal(0,1)",class = "sigma",resp=c("boldness2","fpt"))
 )
 
-### fit models ##NB: the sampler may throw initialization errors at the beginning because it evaluates loglik at log(0)
+### fit models ##NB: the sampler may throw some initialization errors at the beginning because it falls on an impossible starting value
 ### but then come out fine
-###better prior for intercepts?
 
 ###FITTING
 mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
-              data = data, chains=N_chains/2, iter = N_iter/100, warmup = N_warmup/100, thin = N_thin, prior = prior_multi, seed = 42,
+              data = data, chains=N_chains/2, iter = N_iter/20, warmup = N_warmup/20, thin = N_thin, prior = prior_multi, seed = 42,
               control=list(adapt_delta = 0.95,max_treedepth=15) #,save_ranef=FALSE
 )
 
 #careful, >1Gb with iter =20000 warmup = 10000 if saving everything
-# use save_ranef=FALSE to masssively reduce size (if you don't need individual random effects, simply variances, for inference)
+# use save_ranef=FALSE to massively reduce size 
+#(but that means you can't recreate Fig. 4, which rely on random effects)
 ```
 
+```{r ppchecks}
+
+summary_mod <- mod %>%
+  posterior_samples() %>%
+  select(starts_with(c("Intercept", "b_", "sd_", "cor_", "sigma"))) %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  mean_hdi()
+
+summary_mod
+
+mcmc_rank_overlay(mod, pars = summary_mod$name)
+
+###harder to find good pp_checks because of censoring, but ribbons seems a-OK
+ppc_ribbon(yrep=predict(mod,newdata=data,resp="fpt",summary=FALSE),
+           x=rank(predict(mod,resp="fpt")[,1]),
+           y=data$fpt,
+           prob = 0.5, prob_outer=0.95)
+
+ppc_ribbon(yrep=predict(mod,newdata=data[1:720,],resp="boldness2",summary=FALSE),
+           x=rank(predict(mod,resp="boldness2",newdata=data[1:720,])[,1]),
+           y=data$boldness2[1:720],
+           prob = 0.5, prob_outer=0.95)
+
+
+
+```
 
 ## **Making figures**
 
@@ -146,8 +174,7 @@ mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
 
 ### Figure 2
 
-```{r figure-2}
-### PLOTS
+```{r figure2}
 ##### representing predictions on plots
 ## at average temperatures (everything else except phenotype is averaged out)
 
@@ -191,8 +218,9 @@ fig_2a <- filter(data,is.na(boldness)==FALSE) %>%
   geom_violin(data=newdata,aes(y = exp(lboldness), x = band_phenotype, fill = band_phenotype),draw_quantiles = 0.5, show.legend = FALSE,alpha=0.8) +
   scale_fill_brewer(palette = "YlOrBr", direction = 1) +
   scale_y_log10(name = "Boldness (latency, sec)", limits = c(3, 1200), breaks = c(5, 10, 20, 50, 100, 200, 500, 1000)) +
-  scale_x_discrete(name = "Shell phenotype", labels = c("0 bands", "3 bands", "5 bands")) +
-  theme_cowplot()
+  scale_x_discrete(name = "", labels = c("0 bands", "3 bands", "5 bands")) +
+  theme_cowplot()+
+  ggtitle("A")
 
 
 ###arrow_bold
@@ -201,7 +229,7 @@ arrow_bold=ggplot()+
   geom_text(aes(x=c(0,0),y=c(0,1),label=c("bolder","shyer")))+theme_void()
 
 ###arrow_speed
-arrow_speed=ggplot()+
+arrow_fpt=ggplot()+
   geom_segment(aes(x=c(0,0),xend=c(0,0),y=c(0.05,0.95),yend=c(0.95,0.05)),arrow=arrow())+
   geom_text(aes(x=c(0,0),y=c(0,1),label=c("faster","slower")))+theme_void()
 
@@ -214,11 +242,10 @@ fig_2b <- ggplot(data = data) +
   scale_y_log10(name = "Exploration (first passage time, sec)", limits = c(250, 1200), breaks = c(250, 500, 750, 1000)) +
   scale_x_discrete(name = "Shell phenotype", labels = c("0 bands", "3 bands", "5 bands")) +
   #geom_line(data = tab, aes(x = band_genotype, y = fpt,group=id), position=position_dodge(width = 0.9),col = "grey", show.legend = FALSE,alpha=0.3)+
-  theme_cowplot()
+  theme_cowplot()+
+  ggtitle("B")
 
 
-
-#########PLOT 3 
 ## at temperatures range (everything else is averaged out)
 fig_2c <- expand_grid(Temperature = c(15:25), 
               c_order.b = 0, 
@@ -237,19 +264,294 @@ ggplot()+
   geom_line(data = data, aes(x = temperature, y = fpt,group=id), col = "grey", show.legend = FALSE,alpha=0.3) + 
   stat_lineribbon(aes(x = Temperature,y = exp(lfpt)), .width = 0.95,show.legend=FALSE,fill="pink", alpha= 0.8) +
   scale_y_log10(name = "", limits = c(250, 1200),breaks = c(250, 500, 750, 1000)) +
-  scale_x_continuous(name = "Test temperature (°C)", limits = c(14, 26)) +
-  theme_cowplot()
+  scale_x_continuous(name = "Test temperature (°C)", limits = c(14, 26),breaks=c(15,20,25)) +
+  theme_cowplot()+
+  ggtitle("C")
 
-arrow_bold + fig_2a + plot_spacer() + arrow_speed + fig_2b + fig_2c + plot_layout(nrow = 2, widths= c(1,5,5)) + plot_annotation(tag_levels="A")
+arrow_bold + fig_2a + plot_spacer() + arrow_fpt + fig_2b + fig_2c + plot_layout(nrow = 2, widths= c(1,5,5))
+
+##we annotate (A,B,V) using gg title in each plot rather than plot_annotation (which I'd prefer), because plot_annotation annotates ALL the plots, and here that means even the arrows
 
 ```
 
 ### Figure 3
 
+```{r latent-varcomps}
+
+### extracting the relevant latent variances is relatively straightforward
+
+### but to get the total VB and VI for the exploration (fpt) variable, 
+### we need to account for variation in temperature and in responses to temperature, 
+### application of Johnson 2014 MEE (http://onlinelibrary.wiley.com/doi/10.1111/2041-210X.12225/abstract) to get the total random variance of one trait at one obs level (ie including temperature random effect)
+### need to create a design matrix for each level:
+design_id <- as.matrix(expand_grid(Intercept=rep(1,length(unique(data$id))),s_temp=unique(data$s_temp)))
+design_box <- as.matrix(expand.grid(Intercept=rep(1,length(unique(data$box))),s_temp=unique(data$s_temp)))
+
+##now we're good to go
+
+varcomps_fpt_latent <- tibble(
+  beta0 = posterior_samples(mod,pars="b_fpt_Intercept")[,1],
+  VF= rowVars(posterior_linpred(mod, re_formula = NA,scale = "linear",resp="fpt")),
+  VFstate= rowVars(posterior_linpred(mod, 
+                                     newdata= data %>% mutate(s_temp=0,c_order.temp=0,c_order.b = 0), 
+                                     re_formula = NA,scale = "linear",resp="fpt")),
+  ##above: modified newdata because it is the variance of fixed effect assuming individuals only differ in state
+  VI = VarCorr(mod,summary=FALSE)$id$cov[,c("fpt_Intercept","fpt_s_temp"),c("fpt_Intercept","fpt_s_temp")] %>% 
+    array_tree(.,margin=1) %>% 
+    ##apply equation (11) of Johnson 2014 MEE over the posterior
+    map(.,~mean(diag(design_id %*% . %*% t(design_id)))) %>% 
+    as_vector(),
+  VIint= (VarCorr(mod,summary=F)$id$sd[,"fpt_Intercept"])^2,
+  VB= VarCorr(mod,summary=FALSE)$box$cov[,c("fpt_Intercept","fpt_s_temp"),c("fpt_Intercept","fpt_s_temp")] %>%
+    array_tree(.,margin=1) %>% 
+    ##apply equation (11) of Johnson 2014 MEE over the posterior
+    map(.,~mean(diag(design_box %*% . %*% t(design_box)))) %>% 
+    as_vector(),
+  VBint= (VarCorr(mod,summary=F)$box$sd[,"fpt_Intercept"])^2,
+  VD=(posterior_samples(mod,pars="sigma_fpt")[,1])^2
+  ) %>% 
+  mutate(VP = select(.,c(VF,VI,VB,VD)) %>% rowSums() ) %>% 
+  mutate(trait="fpt",type="latent")
+
+
+varcomps_bold_latent <- tibble(
+  beta0=posterior_samples(mod,pars="b_boldness2_Intercept")[,1],
+  VF=rowVars(posterior_linpred(mod, re_formula = NA,scale = "linear",resp="boldness2")),
+  ##checked! works as intended and only provide predictions for the actual boldness values, it discards the dummies added for the multivariate model (see above _ chunks data-wrangling-subset and multivariate-model)
+  VFstate = rowVars(posterior_linpred(mod, 
+                                      newdata= data %>% mutate(s_temp=0,c_order.temp=0,c_order.b = 0), 
+                                      re_formula = NA,scale = "linear", resp="boldness2")),
+  ##above: modified newdata because it is the variance of fixed effect assuming individuals only differ in state
+  VI = (VarCorr(mod,summary=F)$id$sd[,"boldness2_Intercept"])^2,
+  VIint = (VarCorr(mod,summary=F)$id$sd[,"boldness2_Intercept"])^2, ##identical to VI for boldness
+  VB = (VarCorr(mod,summary=F)$box$sd[,"boldness2_Intercept"])^2,
+  VBint = (VarCorr(mod,summary=F)$box$sd[,"boldness2_Intercept"])^2, ##identical to VB for boldness
+  VD = (posterior_samples(mod,pars="sigma_boldness2")[,1])^2
+  ) %>% 
+  mutate(VP = select(.,c(VF,VI,VB,VD)) %>% rowSums() ) %>% 
+  mutate(trait="boldness",type="latent")
+```
+
+```{r obs-varcomps}
+###Important: VP(obs) will necessarily be < VP(predicted) because censoring artificially limits VP(obs)
+
+QGlognormal<-list(
+  inv.link =function(x){exp(x)},
+  var.func=function(x){0}, ##no supplementary distributional variance beyond the one in the log residuals (VD)
+  d.inv.link=function(x){exp(x)} #derivative of exp is exp
+)
+##checked; does give _exact_ observed scales and variances for 'simple' lognormal (no fixed effect, no random effect, only residual var)
+
+
+beta0_obs=NA
+VF_obs=NA
+VFstate_obs=NA
+VI_obs=NA
+VIint_obs=NA
+VB_obs=NA
+VBint_obs=NA
+VP_obs=NA
+for(i in 1:dim(varcomps_fpt_latent)[1]){
+  beta0_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VF[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$mean.obs
+  VF_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VF[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VFstate_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VFstate[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VI_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VI[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VIint_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VIint[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VB_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VB[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VBint_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VBint[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VP_obs[i]<-QGicc(mu=varcomps_fpt_latent$beta0[i],var.comp=varcomps_fpt_latent$VP[i],var.p=varcomps_fpt_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+}
+VD_obs=VP_obs-(VF_obs+VI_obs+VB_obs)
+
+varcomps_fpt_obs=data.frame(beta0=beta0_obs,
+                               VF=VF_obs,VFstate=VFstate_obs,
+                               VI=VI_obs,VIint=VIint_obs,
+                               VB=VB_obs,VBint=VBint_obs,
+                               VD=VD_obs,
+                               trait="fpt",
+                               type="obs",
+                            VP=VP_obs
+) 
+
+varcomps_fpt_obs$iter=1:dim(varcomps_fpt_obs)[1]
+varcomps_fpt_latent$iter=1:dim(varcomps_fpt_latent)[1]
+vcfpt=rbind(varcomps_fpt_obs,varcomps_fpt_latent)
+
+
+beta0_obs=NA
+VF_obs=NA
+VFstate_obs=NA
+VI_obs=NA
+VIint_obs=NA
+VB_obs=NA
+VBint_obs=NA
+VP_obs=NA
+for(i in 1:dim(varcomps_bold_latent)[1]){
+  beta0_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VF[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$mean.obs
+  VF_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VF[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VFstate_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VFstate[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VI_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VI[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VIint_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VIint[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VB_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VB[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VBint_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VBint[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+  VP_obs[i]<-QGicc(mu=varcomps_bold_latent$beta0[i],var.comp=varcomps_bold_latent$VP[i],var.p=varcomps_bold_latent$VP[i],custom.model = QGlognormal,verbose=F)$var.comp.obs
+}
+VD_obs=VP_obs-(VF_obs+VI_obs+VB_obs)
+
+varcomps_bold_obs=data.frame(beta0=beta0_obs,
+                            VF=VF_obs,VFstate=VFstate_obs,
+                            VI=VI_obs,VIint=VIint_obs,
+                            VB=VB_obs,VBint=VBint_obs,
+                            VD=VD_obs,
+                            trait="boldness",
+                            type="obs",
+                            VP=VP_obs
+) 
+
+varcomps_bold_obs$iter=1:dim(varcomps_bold_obs)[1]
+varcomps_bold_latent$iter=1:dim(varcomps_bold_latent)[1]
+vcbold=rbind(varcomps_bold_obs,varcomps_bold_latent)
+
+vc_complete=rbind(vcfpt,vcbold)
+```
+
+
+
+
+```{r figure3}
+
+vc_complete %>%
+  select(-beta0) %>% 
+  gather(key="VC",value="value",VF,VFstate,VI,VIint,VB,VBint,VD,VP)%>% 
+  select(-iter)%>% 
+  group_by(trait,type,VC) %>% 
+  mean_hdi() %>% 
+  print(n=Inf)
+#sae but for repeatabilities
+vc_complete %>% mutate(Ri=VIint/VP,Rstate=(VIint+VFstate)/VP, ratio = VIint/(VIint+VFstate)) %>% 
+  gather(key="RPT",value="value",Rstate,Ri,ratio) %>% 
+  group_by(trait,type,RPT) %>% select(RPT,value) %>% mean_hdi()
+
+#show relative variance components
+vc_complete %>% gather(key="which",value="VC",2:8) %>% filter(type=="obs") %>% 
+  mutate(which=fct_relevel(which,c("VF","VFstate","VB","VBint","VI","VIint","VD")) )%>% 
+  mutate(trait=fct_recode(trait,Boldness="boldness",Exploration="fpt")) %>% 
+  ggplot()+geom_halfeyeh(aes(y=reorder(which,desc(which)),x=100*VC/VP),point_interval = mean_hdi,.width = 0.001,scale="width")+facet_wrap(~trait)+
+  scale_x_continuous(name="Variance explained (%, observed scale)", lim=c(0,100))+
+  scale_y_discrete(name="Variance component",
+                   labels=c(expression(italic(V[D])),
+                            expression(italic(V[I(intercept)])),
+                            expression(italic(V[I])),
+                            expression(italic(V[B(intercept)])),
+                            expression(italic(V[B])),
+                            expression(italic(V[F(state)])),
+                            expression(italic(V[F]))
+                            )) +
+  theme_cowplot()+
+  background_grid()
+```
+
 
 ### Figure 4
 
+```{r figure4}
+
+BLUPS=ranef(mod)$id
+
+fig4_main <- tibble(
+  bold=BLUPS[,"Estimate","boldness2_Intercept"],
+  fpt=BLUPS[,"Estimate","fpt_Intercept"],
+  boldCIlow=BLUPS[,"Q2.5","boldness2_Intercept"],
+  boldCIhigh=BLUPS[,"Q97.5","boldness2_Intercept"],
+  fptCIlow=BLUPS[,"Q2.5","fpt_Intercept"],
+  fptCIhigh=BLUPS[,"Q97.5","fpt_Intercept"]) %>% 
+  ggplot()+
+  geom_segment(aes(x=boldCIlow,xend=boldCIhigh,y=fpt,yend=fpt),col = "grey", show.legend = FALSE,alpha=0.5)+
+  geom_segment(aes(x=bold,xend=bold,y=fptCIlow,yend=fptCIhigh),col = "grey", show.legend = FALSE,alpha=0.5)+
+  geom_point(aes(x=bold,y=fpt))+
+  scale_x_continuous(name = "Boldness BLUP")+
+  scale_y_continuous(name = "Exploration BLUP")+
+  theme_cowplot()
+
+fig4_inset <- tibble(
+  cor = VarCorr(mod,summary=FALSE)$id$cor[,"boldness2_Intercept","fpt_Intercept"]
+) %>% 
+  ggplot()+
+  geom_density(aes(x=cor),fill="white",col="black")+
+  scale_x_continuous(name="",limits=c(-1,1),labels=c(-1,"",0,"",1))+
+  scale_y_continuous(NULL,breaks=NULL)+
+  geom_vline(xintercept = 0,lty=2)+
+  theme(axis.line.y=element_blank(), panel.grid = element_blank())
+
+fig4 <- ggdraw(fig4_main)+draw_plot(fig4_inset,x=0.73,y=0.115,height=0.25,width=0.25)
+
+###arrow_bold
+arrow_bold=ggplot()+
+  geom_segment(aes(x=c(0.05,0.95),xend=c(0.95,0.05),y=c(0),yend=c(0)),arrow=arrow())+
+  geom_text(aes(x=c(0,1),y=c(0,0),label=c("bolder","shyer")))+theme_void()
+
+###arrow_speed
+arrow_fpt=ggplot()+
+  geom_segment(aes(x=c(0,0),xend=c(0,0),y=c(0.05,0.95),yend=c(0.95,0.05)),arrow=arrow())+
+  geom_text(aes(x=c(0,0),y=c(0,1),label=c("faster","slower")))+theme_void()
+
+arrow_fpt + fig4 + plot_spacer() + arrow_bold + plot_layout(nrow=2, widths=c(1,10),heights=c(10,1))
+
+```
 
 ## **Supplementary Materials**
 
 We also present a model in Supplementary Materials. 
+
+```{r supplementary-model}
+
+data_shells<- data_shells0 %>% 
+  mutate(Ntot=rowSums(select(.,N_0bands:N_5bands))) 
+
+mod_S1 <- brm(N_5bands|trials(Ntot)~0+landscape,family=binomial,
+      data=data_shells,
+      prior=set_prior("normal(0,1.5)",class="b"),
+      chains=4,iter=2000,warmup=1000)
+
+data_shells %>% 
+  add_fitted_draws(mod_S1) %>% 
+  ungroup() %>% select(landscape,.value,Ntot) %>% 
+  group_by(landscape) %>%
+  mutate(.value=.value/Ntot) %>% 
+  median_hdi()
+
+data_shells %>% 
+  add_fitted_draws(mod_S1) %>% 
+  ungroup() %>% select(landscape,.value,Ntot,.iteration,.draw) %>% 
+  mutate(.value=.value/Ntot) %>% 
+  compare_levels(variable=.value,by=landscape) %>% 
+  median_hdi()
+
+
+data_shells$y_shells <- with(data_shells, cbind(N_0bands,N_midband,N_2bands,N_3bands,N_5bands))
+
+###works also with a multinomial model if we want to account for all band numbers, and not just 5 vs. the rest
+### but defining good priors for "log-odds relative to reference" harder than for "logit (probability)"
+
+mod_S1bis <- brm(y_shells|trials(Ntot)~0+landscape,family=multinomial,
+      data=data_shells,
+      prior=set_prior("normal(0,1)",class="b",dpar =c("muN2bands","muN3bands","muN5bands","muNmidband")),
+      chains=4,iter=2000,warmup=1000)
+
+data_shells %>% 
+  add_fitted_draws(mod_S1bis) %>% 
+  ungroup() %>% select(landscape,.category,.value,Ntot) %>% 
+  group_by(landscape,.category) %>%
+  mutate(.value=.value/Ntot) %>% 
+  median_hdi(.value)
+
+data_shells %>% 
+  add_fitted_draws(mod_S1bis) %>% 
+  ungroup() %>% select(landscape,.category,.value,Ntot,.iteration,.draw) %>% 
+  group_by(.category) %>% 
+  mutate(.value=.value/Ntot) %>% 
+  compare_levels(variable=.value,by=landscape) %>% 
+  median_hdi()
+
+```
+

@@ -50,7 +50,7 @@ options(mc.cores = 2)
 
 N_chains <- 4
 N_iter <- 20000 ## default number is 2000
-N_warmup <- 10000 ## default number is 1000
+N_warmup <- 5000 ## default number is 1000
 N_thin <- 1 ## thinning frequency, in case it is needed to keep models at a manageable memory size ( 1: no thinning)
 ```
 
@@ -148,9 +148,8 @@ summary_mod <- mod %>%
   select(starts_with(c("Intercept", "b_", "sd_", "cor_", "sigma"))) %>%
   pivot_longer(everything()) %>%
   group_by(name) %>%
-  mean_hdi()
-
-summary_mod
+  mean_hdi() %>% 
+  print(n=Inf)
 
 mcmc_rank_overlay(mod, pars = summary_mod$name)
 
@@ -283,7 +282,7 @@ arrow_bold + fig_2a + plot_spacer() + arrow_fpt + fig_2b + fig_2c + plot_layout(
 
 ### but to get the total VB and VI for the exploration (fpt) variable, 
 ### we need to account for variation in temperature and in responses to temperature, 
-### application of Johnson 2014 MEE (http://onlinelibrary.wiley.com/doi/10.1111/2041-210X.12225/abstract) to get the total random variance of one trait at one obs level (ie including temperature random effect)
+### application of Johnson 2014 MEE (doi 10.1111/2041-210X.12225) to get the total random variance of one trait at one obs level (ie including temperature random effect)
 ### need to create a design matrix for each level:
 design_id <- as.matrix(expand_grid(Intercept=rep(1,length(unique(data$id))),s_temp=unique(data$s_temp)))
 design_box <- as.matrix(expand.grid(Intercept=rep(1,length(unique(data$box))),s_temp=unique(data$s_temp)))
@@ -338,14 +337,15 @@ varcomps_bold_latent <- tibble(
 ```{r obs-varcomps}
 ###Important: VP(obs) will necessarily be < VP(predicted) because censoring artificially limits VP(obs)
 
-### to convert latent variances to the observed scale we follow de Villemereuil et al XXXX XXXX (XXXX)
+### to convert latent variances to the observed scale and obtain partial VF variances (VFstate) 
+### we follow de Villemereuil et al 2016 (doi: 10.1534/genetics.115.186536) and 2018 (10.1111/jeb.13232)
 ### and use tools in their QGglmm package
 QGlognormal<-list(
   inv.link =function(x){exp(x)},
   var.func=function(x){0}, ##no supplementary distributional variance beyond the one in the log residuals (VD)
   d.inv.link=function(x){exp(x)} #derivative of exp is exp
 )
-##checked; does give _exact_ observed scales and variances for 'simple' lognormal (no fixed effect, no random effect, only residual var)
+##tested and checked; does give _exact_ observed scales and variances for 'simple' lognormal (no fixed effect, no random effect, only residual var)
 
 array_fpt_latent <- varcomps_fpt_latent %>% select(beta0:VP) %>% array_tree(.,1) 
 

@@ -1,5 +1,7 @@
 # Personality and shell morph in *Cepaea nemoralis* snails
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3899042.svg)](https://doi.org/10.5281/zenodo.3899042)
+
 This repo contains all data and code needed to re-do the analyses and figures in our manuscript
 
 "Boldness and exploration are linked to shell morph but not environmental context in the snail *Cepaea nemoralis*"  
@@ -14,4 +16,4 @@ This means all file paths are relative, and the analysis *should* work on your c
 
 If you run the script for the first time, models and some other time-consuming outputs will be saved in the `R_output` folder so you don't have to re-run them everytime. 
 
-If you don't want/don't have the time to run them, use the zipped folder named `cepaea-personality-2017-with-rdata` that is bundled with each release here or on Zenodo. It is an exact copy of this repo, but including the model files I saved in my own `R_output` folder (which were added to `gitignore` because of their size).
+If you don't want/don't have the time to run them, use the zipped folder named `cepaea-personality-2017-with-rdata` that is bundled with each release [here](https://github.com/mdahirel/cepaea-personality-2017/releases) or on [Zenodo](https://doi.org/10.5281/zenodo.3899042). It is an exact copy of this repo, but including the model files I saved in my own `R_output` folder (which were added to `gitignore` because of their size).

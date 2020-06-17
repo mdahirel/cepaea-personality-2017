@@ -19,7 +19,7 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 ```
 
-```{r load-packages, eval=FALSE}
+```{r load-packages}
 ######all packages + R up to date as of 13 June 2020
 
 library(matrixStats)
@@ -43,7 +43,7 @@ library(here)
 
 # Introduction
 
-(see manuscript for details)
+(see [manuscript](https://doi.org/10.1101/866947) for details)
 
 ## Aims of study
 
@@ -51,15 +51,15 @@ We want to see if there are links between behaviour and shell morph in the snail
 
 ## General methods
 
-Snails of 3 morphs were caught in two habitats that differ by their level of shading. They were then brought to the lab where we measured a proxy of boldness (simulating predator attacks by pinching snails) and exploration/activity, the latter under a range of 4 temperatures. A total of 360 snails were tested.
+In 2017, snails of 3 morphs were caught in two habitats that differ by their level of shading. They were then brought to the lab where we measured a proxy of boldness (simulating predator attacks by pinching snails) and exploration/activity, the latter under a range of 4 temperatures. A total of 360 snails were tested.
 
-We came the following year to re-sample snails, this time at random with respect to banding. This allowed us to see whether the two habitats differed in their proportion of (darker) highly banded snails.
+We came back the following year to re-sample snails, this time at random with respect to banding. This allowed us to see whether the two habitats differed in their proportion of (darker) highly banded snails.
 
 # Analysis
 
 ## Loading datasets
 
-```{r load-datafiles, eval=FALSE}
+```{r load-datafiles}
 ## Load main dataset
 
 data0 <- read_csv(here("data","cepaea-2017-dataset.csv"))
@@ -73,7 +73,7 @@ The `data0` dataset contains the following variables, collected on 360 snails sa
 
 - `id`: unique individual ID for each snail
 
-- `landscape`: name of the landscape of origin. "Garenne" (French for "warren") is the "open", sun-exposed garden landscape, "Marais" ("swamp") the shaded, humid, woodlot
+- `landscape`: name of the landscape of origin. "Garenne" (French for "warren") is the open, sun-exposed garden landscape, "Marais" ("swamp") the shaded, humid, woodlot
 
 - `box` : unique ID for the box in which snails are stored in the lab
 
@@ -89,7 +89,7 @@ The `data0` dataset contains the following variables, collected on 360 snails sa
 
 - `order.temp`: trial order for exploration. There were 4 exploration trials, one per temperature. Half the snails were tested in increasing order of temperature, the other half in decreasing order
 
-Note that the data are not organized fully following 'tidy' principles: there are no "intrinsic" links between the `fpt` and `boldness` observations that are on the same line (besides being from the same individuals). All boldness tests were done first, then all the exploration tests. Data are stored this way to minimize the number of NAs.
+Note that the data are not organized fully following 'tidy' principles: there are no "intrinsic" links between the `fpt` and `boldness` observations that are on the same row (besides being from the same individuals). All boldness tests were done first, then all the exploration tests. Data are stored this way to minimize the number of NAs.
 
 The `data_shells0` dataset (used in Supplementary Material only) has the following variables, collected the following year:
 
@@ -101,7 +101,7 @@ The `data_shells0` dataset (used in Supplementary Material only) has the followi
 
 We first need to add a censoring variable, to correctly analyze snails that did not respond before the end of observations (20 minutes):
 
-```{r data-wrangling-censoring, eval=FALSE}
+```{r data-wrangling-censoring}
 
 data<-data0 %>% 
   mutate(censored_fpt = as.numeric(fpt>=1200),
@@ -110,11 +110,11 @@ data<-data0 %>%
 ```
 
 We then scale and recode several variables to make the model easier to fit and coefficients easier to interpret:
-```{r data-wrangling-recoding, eval=FALSE}
+```{r data-wrangling-recoding}
 
 data<-data %>% 
   mutate(s_temp = scale(temperature)[,1], #centred and scaled
-         c_order.temp = order.temp - 2.5, ## center without scaling
+         c_order.temp = order.temp - 2.5, ## centred without scaling
          c_order.b = order.b - 1.5, ## same
          c_landscape = -0.5 + as.numeric(landscape == "Marais"), ## same
          ##recoding
@@ -128,11 +128,11 @@ sd_temp <- attr(scale(data$temperature), "scaled:scale")
 ```
 
 
-If you looked at the data, you may have noticed there are only 2 boldness observations per individual, but 4 "exploration" observations. This means there are many NAs in the table. The `brms` package can easily analyse multivariate data where the response vectors do not have the same length using the `subset()` argument to specify which values to use for each submodel. However (due to constraints in coding), there still needs to be values for all responses on all rows (or else rows with NAs will be discarded). So we need to fill the NAs in the boldness column with dummy values (don't worry, they will be ignored in fitting). We do actually do that by creating new columns, to prevent any accidental mistakes:
+If you looked at the data, you may have noticed there are only 2 boldness observations per individual, but 4 "exploration" observations. This means there are many NAs in the table. The `brms` package can easily analyse multivariate data where the response vectors do not have the same length using the `subset()` argument to specify which values to use for each submodel. However ([due to constraints in coding as of June 2020, may change in the future](https://github.com/paul-buerkner/brms/issues/895)), there still needs to be values for all responses on all rows (or else rows with NAs will be discarded). So we need to fill the NAs in the boldness column with dummy values (don't worry, they will be ignored in fitting). We do actually do that by creating new columns rather than overwriting, to prevent any accidental mistakes:
 
 ```{r data-wrangling-subset}
 data <- data %>% 
-  mutate(is.valid.bold = as.numeric(is.na(boldness) == FALSE), ### if it's not NA, it's valid,
+  mutate(is.valid.bold = as.numeric(is.na(boldness) == FALSE), ### if it's not a NA in the original column, then it's valid,
          censored_bold2 = c(censored_bold[1:720], rep(1,720)),
          boldness2 = c(boldness[1:720], rep(1200, 720)) 
          ### and we fill the cells that won't be used with dummy values
@@ -144,7 +144,7 @@ data <- data %>%
 
 Now, let's fit our main model (please see description in the methods and supplementary material of the paper).
 
-```{r multivariate-model-formulas, eval=FALSE}
+```{r multivariate-model-formulas}
 bf_explo <- bf(fpt |cens(censored_fpt) ~ ((is3b+is5b) * c_landscape) * s_temp + c_order.temp +
                     (s_temp | p | box) + (s_temp | q | id), family = lognormal)
 
@@ -153,7 +153,7 @@ bf_boldness <- bf(boldness2 | subset(is.valid.bold) + cens(censored_bold2) ~ (is
 ```
 
 
-```{r multivariate-model-priors, eval=FALSE}
+```{r multivariate-model-priors}
 ### PRIOR
 prior_multi <- c(
   set_prior("normal(0, 1)", class = "b",resp=c("boldness2","fpt")), ##### Fixed effects; weakly informative prior for response centred and scaled
@@ -166,7 +166,7 @@ prior_multi <- c(
 ```
 
 
-```{r multivariate-model, eval=FALSE}
+```{r multivariate-model}
 ### fit models ##NB: the sampler may throw some initialization errors at the beginning because it falls on an impossible starting value
 ### but then come out fine
 
@@ -190,7 +190,7 @@ mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
 save(list="mod", file=here("R_output","model_main.Rdata"))
 }
 ```
-The model takes between 20 minutes and 1h to run on an ASUS X556UQ laptop with 12Go memory, depending on the number of chains allowed to run in parallel (`options(mc.cores = ???)` at the top of this file) and whatever else is running at the same time.
+The model takes between 20 minutes and 1h to run on an ASUS X556UQ laptop with 12Go memory, depending on the number of chains allowed to run in parallel (see `options(mc.cores = ???)` at the top of this file) and whatever else is running at the same time.
 
 # Postprocessing : plots and summaries
 
@@ -311,7 +311,7 @@ fig_2b <- ggplot(data = data) +
 
 
 ```{r figure2-3, eval=FALSE}
-## at temperatures range (everything else is averaged out)
+## over range of temperatures (everything else is averaged out)
 fig_2c <- expand_grid(Temperature = c(15:25), 
               c_order.b = 0, 
               c_order.temp = 0, 

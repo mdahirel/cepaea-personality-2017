@@ -1,4 +1,4 @@
-# Personality and shell morph in Cepaea nemoralis snails
+# Personality and shell morph in *Cepaea nemoralis* snails
 
 This repo contains all data and code needed to re-do the analyses and figures in our manuscript
 

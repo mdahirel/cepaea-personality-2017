@@ -1,25 +1,25 @@
----
-title: "Personality and shell morph in *Cepaea nemoralis* snails"
-author: 
-  - "**Maxime Dahirel** (script author)"
-  - Valentin Gaudu
-  - Armelle Ansart
-date: "12/06/2020"
-output: 
-  html_document:
-    theme: yeti
-    toc: TRUE
-    toc_float: TRUE
-    code_download: TRUE
-editor_options: 
-  chunk_output_type: console
----
-
-```{r setup, include=FALSE}
+#' ---
+#' title: "Personality and shell morph in *Cepaea nemoralis* snails"
+#' author: 
+#'   - "**Maxime Dahirel** (script author)"
+#'   - Valentin Gaudu
+#'   - Armelle Ansart
+#' date: "12/06/2020"
+#' output: 
+#'   html_document:
+#'     theme: yeti
+#'     toc: TRUE
+#'     toc_float: TRUE
+#'     code_download: TRUE
+#' editor_options: 
+#'   chunk_output_type: console
+#' ---
+#' 
+## ----setup, include=FALSE---------------------------------------------------------------------------------------------------------------------
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
-```
 
-```{r load-packages}
+#' 
+## ----load-packages----------------------------------------------------------------------------------------------------------------------------
 ######all packages + R up to date as of 13 June 2020
 
 library(matrixStats)
@@ -39,78 +39,78 @@ library(cowplot)
 library(patchwork)
 
 library(here)
-```
 
-# Introduction
-
-(see [manuscript](https://doi.org/10.1101/866947) for details)
-
-## Aims of study
-
-We want to see if there are links between behaviour and shell morph in the snail *Cepaea nemoralis*. This species, common in western Europe and introduced in North America, has been the subject of many evolutionary studies in the last decades, mainly related to its shell polymorphism and its relation with abiotic (climate) and biotic (predators) selection pressures. We here focus on one aspect of shell polymorphism, number of bands, for simplicity.
-
-## General methods
-
-In 2017, snails of 3 morphs were caught in two habitats that differ by their level of shading. They were then brought to the lab where we measured a proxy of boldness (simulating predator attacks by pinching snails) and exploration/activity, the latter under a range of 4 temperatures. A total of 360 snails were tested.
-
-We came back the following year to re-sample snails, this time at random with respect to banding. This allowed us to see whether the two habitats differed in their proportion of (darker) highly banded snails.
-
-# Analysis
-
-## Loading datasets
-
-```{r load-datafiles}
+#' 
+#' # Introduction
+#' 
+#' (see [manuscript](https://doi.org/10.1101/866947) for details)
+#' 
+#' ## Aims of study
+#' 
+#' We want to see if there are links between behaviour and shell morph in the snail *Cepaea nemoralis*. This species, common in western Europe and introduced in North America, has been the subject of many evolutionary studies in the last decades, mainly related to its shell polymorphism and its relation with abiotic (climate) and biotic (predators) selection pressures. We here focus on one aspect of shell polymorphism, number of bands, for simplicity.
+#' 
+#' ## General methods
+#' 
+#' In 2017, snails of 3 morphs were caught in two habitats that differ by their level of shading. They were then brought to the lab where we measured a proxy of boldness (simulating predator attacks by pinching snails) and exploration/activity, the latter under a range of 4 temperatures. A total of 360 snails were tested.
+#' 
+#' We came back the following year to re-sample snails, this time at random with respect to banding. This allowed us to see whether the two habitats differed in their proportion of (darker) highly banded snails.
+#' 
+#' # Analysis
+#' 
+#' ## Loading datasets
+#' 
+## ----load-datafiles---------------------------------------------------------------------------------------------------------------------------
 ## Load main dataset
 
 data0 <- read_csv(here("data","cepaea-2017-dataset.csv"))
 
 data_shells0 <- read_csv(here("data","cepaea-2018-shells.csv"))
 
-```
 
-
-The `data0` dataset contains the following variables, collected on 360 snails sampled and tested in 2017:
-
-- `id`: unique individual ID for each snail
-
-- `landscape`: name of the landscape of origin. "Garenne" (French for "warren") is the open, sun-exposed garden landscape, "Marais" ("swamp") the shaded, humid, woodlot
-
-- `box` : unique ID for the box in which snails are stored in the lab
-
-- `band_phenotype`: 0, 3, or 5 dark bands on the shell
-
-- `boldness`: time (sec) to resume activity after a simulated predator attack (pinching on the foot)
-
-- `order.b`: trial order for boldness (there were two boldness trials)
-
-- `fpt`: time (sec) to leave the test area in the exploration trial, taken as our measure of exploration/activity
-
-- `temperature`: the temperature of the "exploration" trial
-
-- `order.temp`: trial order for exploration. There were 4 exploration trials, one per temperature. Half the snails were tested in increasing order of temperature, the other half in decreasing order
-
-Note that the data are not organized fully following 'tidy' principles: there are no "intrinsic" links between the `fpt` and `boldness` observations that are on the same row (besides being from the same individuals). All boldness tests were done first, then all the exploration tests. Data are stored this way to minimize the number of NAs.
-
-The `data_shells0` dataset (used in Supplementary Material only) has the following variables, collected the following year:
-
-- `landscape`: see previous
-
-- `N_0bands`, `N_midband`, `N_2bands`, `N_3bands`, `N_5bands`: number of snails caught per band phenotype (in *Cepaea*, band phenotypes are traditionally coded with numbers from 1-5, going from top to bottom, with a 0 given if the band is absent. Our five categories correspond to phenotypes 00000, 00300, 00045, 00345 and 12345 respectively)
-
-## Data preprocessing
-
-We first need to add a censoring variable, to correctly analyze snails that did not respond before the end of observations (20 minutes):
-
-```{r data-wrangling-censoring}
+#' 
+#' 
+#' The `data0` dataset contains the following variables, collected on 360 snails sampled and tested in 2017:
+#' 
+#' - `id`: unique individual ID for each snail
+#' 
+#' - `landscape`: name of the landscape of origin. "Garenne" (French for "warren") is the open, sun-exposed garden landscape, "Marais" ("swamp") the shaded, humid, woodlot
+#' 
+#' - `box` : unique ID for the box in which snails are stored in the lab
+#' 
+#' - `band_phenotype`: 0, 3, or 5 dark bands on the shell
+#' 
+#' - `boldness`: time (sec) to resume activity after a simulated predator attack (pinching on the foot)
+#' 
+#' - `order.b`: trial order for boldness (there were two boldness trials)
+#' 
+#' - `fpt`: time (sec) to leave the test area in the exploration trial, taken as our measure of exploration/activity
+#' 
+#' - `temperature`: the temperature of the "exploration" trial
+#' 
+#' - `order.temp`: trial order for exploration. There were 4 exploration trials, one per temperature. Half the snails were tested in increasing order of temperature, the other half in decreasing order
+#' 
+#' Note that the data are not organized fully following 'tidy' principles: there are no "intrinsic" links between the `fpt` and `boldness` observations that are on the same row (besides being from the same individuals). All boldness tests were done first, then all the exploration tests. Data are stored this way to minimize the number of NAs.
+#' 
+#' The `data_shells0` dataset (used in Supplementary Material only) has the following variables, collected the following year:
+#' 
+#' - `landscape`: see previous
+#' 
+#' - `N_0bands`, `N_midband`, `N_2bands`, `N_3bands`, `N_5bands`: number of snails caught per band phenotype (in *Cepaea*, band phenotypes are traditionally coded with numbers from 1-5, going from top to bottom, with a 0 given if the band is absent. Our five categories correspond to phenotypes 00000, 00300, 00045, 00345 and 12345 respectively)
+#' 
+#' ## Data preprocessing
+#' 
+#' We first need to add a censoring variable, to correctly analyze snails that did not respond before the end of observations (20 minutes):
+#' 
+## ----data-wrangling-censoring-----------------------------------------------------------------------------------------------------------------
 
 data<-data0 %>% 
   mutate(censored_fpt = as.numeric(fpt>=1200),
          censored_bold = as.numeric(boldness >= 1200)
   )
-```
 
-We then scale and recode several variables to make the model easier to fit and coefficients easier to interpret:
-```{r data-wrangling-recoding}
+#' 
+#' We then scale and recode several variables to make the model easier to fit and coefficients easier to interpret:
+## ----data-wrangling-recoding------------------------------------------------------------------------------------------------------------------
 
 data<-data %>% 
   mutate(s_temp = scale(temperature)[,1], #centred and scaled
@@ -125,35 +125,35 @@ data<-data %>%
 
 mean_temp <- attr(scale(data$temperature), "scaled:center") ##useful for plotting
 sd_temp <- attr(scale(data$temperature), "scaled:scale")
-```
 
-
-If you looked at the data, you may have noticed there are only 2 boldness observations per individual, but 4 "exploration" observations. This means there are many NAs in the table. The `brms` package can easily analyse multivariate data where the response vectors do not have the same length using the `subset()` argument to specify which values to use for each submodel. However ([due to constraints in coding as of June 2020, may change in the future](https://github.com/paul-buerkner/brms/issues/895)), there still needs to be values for all responses on all rows (or else rows with NAs will be discarded). So we need to fill the NAs in the boldness column with dummy values (don't worry, they will be ignored in fitting). We do actually do that by creating new columns rather than overwriting, to prevent any accidental mistakes:
-
-```{r data-wrangling-subset}
+#' 
+#' 
+#' If you looked at the data, you may have noticed there are only 2 boldness observations per individual, but 4 "exploration" observations. This means there are many NAs in the table. The `brms` package can easily analyse multivariate data where the response vectors do not have the same length using the `subset()` argument to specify which values to use for each submodel. However ([due to constraints in coding as of June 2020, may change in the future](https://github.com/paul-buerkner/brms/issues/895)), there still needs to be values for all responses on all rows (or else rows with NAs will be discarded). So we need to fill the NAs in the boldness column with dummy values (don't worry, they will be ignored in fitting). We do actually do that by creating new columns rather than overwriting, to prevent any accidental mistakes:
+#' 
+## ----data-wrangling-subset--------------------------------------------------------------------------------------------------------------------
 data <- data %>% 
   mutate(is.valid.bold = as.numeric(is.na(boldness) == FALSE), ### if it's not a NA in the original column, then it's valid,
          censored_bold2 = c(censored_bold[1:720], rep(1,720)),
          boldness2 = c(boldness[1:720], rep(1200, 720)) 
          ### and we fill the cells that won't be used with dummy values
   )
-```
 
-
-## Main model
-
-Now, let's fit our main model (please see description in the methods and supplementary material of the paper).
-
-```{r multivariate-model-formulas}
+#' 
+#' 
+#' ## Main model
+#' 
+#' Now, let's fit our main model (please see description in the methods and supplementary material of the paper).
+#' 
+## ----multivariate-model-formulas--------------------------------------------------------------------------------------------------------------
 bf_explo <- bf(fpt |cens(censored_fpt) ~ ((is3b+is5b) * c_landscape) * s_temp + c_order.temp +
                     (s_temp | p | box) + (s_temp | q | id), family = lognormal)
 
 bf_boldness <- bf(boldness2 | subset(is.valid.bold) + cens(censored_bold2) ~ (is3b+is5b) * c_landscape + c_order.b +
                     (1 | p | box) + (1 | q | id), family = lognormal)
-```
 
-
-```{r multivariate-model-priors}
+#' 
+#' 
+## ----multivariate-model-priors----------------------------------------------------------------------------------------------------------------
 ### PRIOR
 prior_multi <- c(
   set_prior("normal(0, 1)", class = "b",resp=c("boldness2","fpt")), ##### Fixed effects; weakly informative prior for response centred and scaled
@@ -163,10 +163,10 @@ prior_multi <- c(
   set_prior("normal(0,1)",class = "sigma",resp=c("boldness2","fpt"))
 )
 
-```
 
-
-```{r multivariate-model}
+#' 
+#' 
+## ----multivariate-model-----------------------------------------------------------------------------------------------------------------------
 ### fit models ##NB: the sampler may throw some initialization errors at the beginning because it falls on an impossible starting value
 ### but then come out fine
 
@@ -189,16 +189,16 @@ mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
 
 save(list="mod", file=here("R_output","model_main.Rdata"))
 }
-```
-The model takes between 20 minutes and 1h to run on an ASUS X556UQ laptop with 12Go memory, depending on the number of chains allowed to run in parallel (see `options(mc.cores = ???)` at the top of this file) and whatever else is running at the same time.
 
-# Postprocessing : plots and summaries
-
-## Summaries and posterior checks
-
-We check summaries to be sure convergence has been reached ($\widehat{R} \simeq 1$), effective sample sizes are correct, and to get posterior means and intervals. The default `summary()` call gives quantile intervals, so we work a bit to get higher density intervals. We also use rank plots (http://arxiv.org/abs/1903.08008) to visually check convergence and stationarity:
-
-```{r summaries}
+#' The model takes between 20 minutes and 1h to run on an ASUS X556UQ laptop with 12Go memory, depending on the number of chains allowed to run in parallel (see `options(mc.cores = ???)` at the top of this file) and whatever else is running at the same time.
+#' 
+#' # Postprocessing : plots and summaries
+#' 
+#' ## Summaries and posterior checks
+#' 
+#' We check summaries to be sure convergence has been reached ($\widehat{R} \simeq 1$), effective sample sizes are correct, and to get posterior means and intervals. The default `summary()` call gives quantile intervals, so we work a bit to get higher density intervals. We also use rank plots (http://arxiv.org/abs/1903.08008) to visually check convergence and stationarity:
+#' 
+## ----summaries--------------------------------------------------------------------------------------------------------------------------------
 summary(mod)  # look at effective sample sizes
 
 summary_mod <- mod %>%
@@ -210,11 +210,11 @@ summary_mod <- mod %>%
   print(n=Inf)
 
 mcmc_rank_overlay(mod, pars = summary_mod$name)
-```
 
-We then do some posterior predictive checks:
-
-```{r pp_checks}
+#' 
+#' We then do some posterior predictive checks:
+#' 
+## ----pp_checks--------------------------------------------------------------------------------------------------------------------------------
 ###harder to find good pp_checks because of censoring, but ribbons (ranked observed values overlaid on prediction intervals) seems a-OK
 ###note the prediction behaviour for the censored datapoints
 ppc_ribbon(yrep=predict(mod,newdata=data,resp="fpt",summary=FALSE),
@@ -226,15 +226,15 @@ ppc_ribbon(yrep=predict(mod,newdata=data[1:720,],resp="boldness2",summary=FALSE)
            x=rank(predict(mod,resp="boldness2",newdata=data[1:720,])[,1]),
            y=data$boldness2[1:720],
            prob = 0.5, prob_outer=0.95)
-```
 
-## Making figures
-
-(Fig. 1 is a set of photographs, so we start at Fig.2 for data plots)
-
-### Figure 2
-
-```{r figure2-1}
+#' 
+#' ## Making figures
+#' 
+#' (Fig. 1 is a set of photographs, so we start at Fig.2 for data plots)
+#' 
+#' ### Figure 2
+#' 
+## ----figure2-1--------------------------------------------------------------------------------------------------------------------------------
 ##### first get posterior predictions
 ## at average temperatures/trial order/landscape (everything else except phenotype is averaged out)
 
@@ -269,10 +269,10 @@ newdata2 <- data %>%
   select(-(.value))
 
 newdata<-inner_join(newdata,newdata2) ; rm(newdata2)
-```
 
-
-```{r figure2-2}
+#' 
+#' 
+## ----figure2-2--------------------------------------------------------------------------------------------------------------------------------
 ### for boldness
 fig_2a <- filter(data,is.na(boldness)==FALSE) %>% 
   ggplot() +
@@ -307,10 +307,10 @@ fig_2b <- ggplot(data = data) +
   #geom_line(data = tab, aes(x = band_genotype, y = fpt,group=id), position=position_dodge(width = 0.9),col = "grey", show.legend = FALSE,alpha=0.3)+
   theme_half_open(11) +
   ggtitle("B")
-```
 
-
-```{r figure2-3}
+#' 
+#' 
+## ----figure2-3--------------------------------------------------------------------------------------------------------------------------------
 ## over range of temperatures (everything else is averaged out)
 fig_2c <- expand_grid(Temperature = c(15:25), 
               c_order.b = 0, 
@@ -332,24 +332,24 @@ ggplot()+
   scale_x_continuous(name = "Test temperature (°C)", limits = c(14, 26),breaks=15:25, labels=c(15,"","","","",20,"","","","",25)) +
   theme_half_open(11) +
   ggtitle("C")
-```
 
-
-```{r figure2}
+#' 
+#' 
+## ----figure2----------------------------------------------------------------------------------------------------------------------------------
 arrow_bold + fig_2a + plot_spacer() + arrow_fpt + fig_2b + fig_2c + plot_layout(nrow = 2, widths= c(1,5,5))
 
 ##we annotate (A,B,C) using ggtitle in each plot rather than plot_annotation (which I'd prefer), because plot_annotation annotates ALL the plots, and here that means even the arrows
 
-```
 
-### Figure 3
-
-Here we want to display the variation partitioning. 
-
-The first step is extracting the relevant latent variances (fixed, random, "residual"). Relatively straightforward, but to get the correct total VB and VI for exploration, we need to account for individual/box variation in the response to temperature. We here apply Johnson 2014 MEE (doi 10.1111/2041-210X.12225) to get the total random variance of one trait at one observation level (see manuscript for names of each variance component):
-
-(this might take some time; about 10 min on my laptop)
-```{r latent-varcomps}
+#' 
+#' ### Figure 3
+#' 
+#' Here we want to display the variation partitioning. 
+#' 
+#' The first step is extracting the relevant latent variances (fixed, random, "residual"). Relatively straightforward, but to get the correct total VB and VI for exploration, we need to account for individual/box variation in the response to temperature. We here apply Johnson 2014 MEE (doi 10.1111/2041-210X.12225) to get the total random variance of one trait at one observation level (see manuscript for names of each variance component):
+#' 
+#' (this might take some time; about 10 min on my laptop)
+## ----latent-varcomps--------------------------------------------------------------------------------------------------------------------------
 
 if(file.exists(here("R_output","latent_varcomps.Rdata")))
   {
@@ -410,12 +410,12 @@ varcomps_bold_latent <- tibble(
 
 save(list=c("varcomps_bold_latent","varcomps_fpt_latent"), file=here("R_output","latent_varcomps.Rdata"))
 }
-```
 
-Then we need to convert these latent variances to the observed/data scale. (Well, we don't strictly *need* to) We follow de Villemereuil et al 2016 (doi: 10.1534/genetics.115.186536) and 2018 (10.1111/jeb.13232) and use tools in their QGglmm package. 
-Careful, this may take some time (about 2-3 hours on my laptop):
-
-```{r obs-varcomps}
+#' 
+#' Then we need to convert these latent variances to the observed/data scale. (Well, we don't strictly *need* to) We follow de Villemereuil et al 2016 (doi: 10.1534/genetics.115.186536) and 2018 (10.1111/jeb.13232) and use tools in their QGglmm package. 
+#' Careful, this may take some time (about 2-3 hours on my laptop):
+#' 
+## ----obs-varcomps-----------------------------------------------------------------------------------------------------------------------------
 if(file.exists(here("R_output","obs_varcomps.Rdata")))
   {
   load(here("R_output","obs_varcomps.Rdata"))
@@ -500,13 +500,13 @@ save(list="vc_obs", file=here("R_output","obs_varcomps.Rdata"))
     }
 
 vc_obs %>% pivot_longer(VF:VP) %>% group_by(trait,type,name) %>% mean_hdi(value)
-```
 
-If you poke around, you may notice that the VP you get here is higher than what you'd obtain using var(observations). This is normal, because censoring artificially limits the latter. The former is closer to what we'd actually have observed if we could have observed all snails until they expressed the behaviour of interest (in theory at least).
-
-We extract information on repeatabilities on the way:
-
-```{r repeatabilities}
+#' 
+#' If you poke around, you may notice that the VP you get here is higher than what you'd obtain using var(observations). This is normal, because censoring artificially limits the latter. The former is closer to what we'd actually have observed if we could have observed all snails until they expressed the behaviour of interest (in theory at least).
+#' 
+#' We extract information on repeatabilities on the way:
+#' 
+## ----repeatabilities--------------------------------------------------------------------------------------------------------------------------
 ###
 vc_obs %>% 
   group_by(trait) %>%
@@ -518,11 +518,11 @@ vc_obs %>%
   pivot_longer(-c(trait,.iteration)) %>% 
   group_by(name,.add = TRUE) %>% 
   mean_hdi(value)
-```
 
-Now we can make Figure 3:
-
-```{r figure3}
+#' 
+#' Now we can make Figure 3:
+#' 
+## ----figure3----------------------------------------------------------------------------------------------------------------------------------
 
 #show relative variance components
 vc_obs %>% 
@@ -547,12 +547,12 @@ vc_obs %>%
                             )) +
   theme_half_open(11) +
   background_grid(colour.major = "grey95",colour.minor = "grey95")
-```
 
-
-### Figure 4
-
-```{r figure4}
+#' 
+#' 
+#' ### Figure 4
+#' 
+## ----figure4----------------------------------------------------------------------------------------------------------------------------------
 
 BLUPS_bold<-ranef(mod,summary=FALSE)$id[,,"boldness2_Intercept"] %>% 
   as_tibble() %>% 
@@ -611,13 +611,13 @@ arrow_fpt=ggplot()+
 
 arrow_fpt + fig4 + plot_spacer() + arrow_bold + plot_layout(nrow=2, widths=c(1,10),heights=c(10,1))
 
-```
 
-# Supplementary Materials
-
-We also present a model in Supplementary Materials, on the differences in the % of 5-banded snails between the two source landscapes:
-
-```{r supplementary-model}
+#' 
+#' # Supplementary Materials
+#' 
+#' We also present a model in Supplementary Materials, on the differences in the % of 5-banded snails between the two source landscapes:
+#' 
+## ----supplementary-model----------------------------------------------------------------------------------------------------------------------
 data_shells<- data_shells0 %>% 
   mutate(Ntot=rowSums(select(.,N_0bands:N_5bands))) 
 
@@ -634,10 +634,10 @@ mod_S1 <- brm(N_5bands|trials(Ntot)~0+landscape,family=binomial,
 
 save(list="mod_S1", file=here("R_output","model_suppl.Rdata"))
 }
-```
 
-
-```{r supplementary-model-summary}
+#' 
+#' 
+## ----supplementary-model-summary--------------------------------------------------------------------------------------------------------------
 
 summary(mod_S1)  # look at effective sample sizes
 
@@ -667,11 +667,11 @@ data_shells %>%
   median_hdi()
 
 
-```
 
-
-(Not shown in the manuscript or in supplementary Materials, and not fully evaluated _ cf priors, for instance). Note that it also works with a multinomial model if we want to account for all band numbers, and not just 5 vs. the rest
-```{r supplementary-model-multi}
+#' 
+#' 
+#' (Not shown in the manuscript or in supplementary Materials, and not fully evaluated _ cf priors, for instance). Note that it also works with a multinomial model if we want to account for all band numbers, and not just 5 vs. the rest
+## ----supplementary-model-multi----------------------------------------------------------------------------------------------------------------
 data_shells$y_shells <- with(data_shells, cbind(N_0bands,N_midband,N_2bands,N_3bands,N_5bands))
 
 if(file.exists(here("R_output","model_suppl_alt.Rdata")))
@@ -688,10 +688,10 @@ mod_S1bis <- brm(y_shells|trials(Ntot)~0+landscape,family=multinomial,
 
 save(list="mod_S1bis", file=here("R_output","model_suppl_alt.Rdata"))
 }
-```
 
-
-```{r supplementary-model-multi-summary}
+#' 
+#' 
+## ----supplementary-model-multi-summary--------------------------------------------------------------------------------------------------------
 
 
 data_shells %>% 
@@ -709,5 +709,5 @@ data_shells %>%
   compare_levels(variable=.value,by=landscape) %>% 
   median_hdi()
 
-```
 
+#' 

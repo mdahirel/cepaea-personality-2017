@@ -16,4 +16,4 @@ This means all file paths are relative, and the analysis *should* work on your c
 
 If you run the script for the first time, models and some other time-consuming outputs will be saved in the `R_output` folder so you don't have to re-run them everytime. 
 
-If you don't want/don't have the time to run them, copy and unzip into the `R_output` folder the content of the zipped folder named `cepaea-personality-2017-rdata-output.zip` that is bundled with each release [here](https://github.com/mdahirel/cepaea-personality-2017/releases) or on [Zenodo](https://doi.org/10.5281/zenodo.3899042). It is an exact copy of the model files I saved in my own `R_output` folder (which were added to `gitignore` because of their size).
+If you don't want/don't have the time to run them, copy and unzip into the `R_output` folder the content of the zipped folder named `cepaea-personality-2017-rdata-output.zip` that is bundled with the most recent release [on Github](https://github.com/mdahirel/cepaea-personality-2017/releases). It is an exact copy of the model files I saved in my own `R_output` folder (which were added to `gitignore` because of their size).

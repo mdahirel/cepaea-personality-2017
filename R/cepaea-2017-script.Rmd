@@ -152,6 +152,15 @@ bf_boldness <- bf(boldness2 | subset(is.valid.bold) + cens(censored_bold2) ~ (is
                     (1 | p | box) + (1 | q | id), family = lognormal)
 ```
 
+One may wonder (we did, and a reviewer did too) whether among-individual variation could differ among morphs. We believed a priori, based on Dingemanse and Dochtermann 2013 (https://doi.org/10.1111/1365-2656.12013) that we simply do not have enough data per morph to test this. But it's still worthwhile to have a look, as an illustration (will not be presented in the manuscript):
+
+```{r multivariate-model-formulas-alt}
+bf_explo2 <- bf(fpt |cens(censored_fpt) ~ ((is3b+is5b) * c_landscape) * s_temp + c_order.temp +
+                    (s_temp | p | box) + (s_temp | q | gr(id,by = band_phenotype)), family = lognormal)
+
+bf_boldness2 <- bf(boldness2 | subset(is.valid.bold) + cens(censored_bold2) ~ (is3b+is5b) * c_landscape + c_order.b +
+                    (1 | p | box) + (1 | q | gr(id,by = band_phenotype)), family = lognormal)
+```
 
 ```{r multivariate-model-priors}
 ### PRIOR
@@ -170,12 +179,11 @@ prior_multi <- c(
 ### fit models ##NB: the sampler may throw some initialization errors at the beginning because it falls on an impossible starting value
 ### but then come out fine
 
-if(file.exists(here("R_output","model_main.Rdata")))
+if(file.exists(here("R_output","model_main.Rdata"))){
   # this if-else statement is avoid re-fitting a model if there is already one existing in R_output
-  # (especially when re-knitting the rmd file)
   # to override, re-run and re-save manually the model by selecting only relevant code lines, instead of running the entire chunk
-  {
   load(here("R_output","model_main.Rdata"))
+  load(here("R_output","model_alt.Rdata"))
   }else
     {
 mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
@@ -187,10 +195,31 @@ mod <- brm(mvbf(bf_explo + bf_boldness, rescor = FALSE),
               control=list(adapt_delta = 0.95,max_treedepth=15)
 )
 
+mod2 <- brm(mvbf(bf_explo2 + bf_boldness2, rescor = FALSE),
+              data = data, 
+              chains=4, iter = 12000, warmup = 2000, 
+              prior = prior_multi, seed = 42,
+              control=list(adapt_delta = 0.95,max_treedepth=15)
+)### probably should need some more iterations, but good enough for a quick comparison
+
 save(list="mod", file=here("R_output","model_main.Rdata"))
+save(list="mod2", file=here("R_output","model_alt.Rdata"))
 }
 ```
-The model takes between 20 minutes and 1h to run on an ASUS X556UQ laptop with 12Go memory, depending on the number of chains allowed to run in parallel (see `options(mc.cores = ???)` at the top of this file) and whatever else is running at the same time.
+The models take between 20 minutes and 1h each to run on an ASUS X556UQ laptop with 12Go memory, depending on the number of chains allowed to run in parallel (see `options(mc.cores = ???)` at the top of this file) and whatever else is running at the same time.
+
+One can use diagnostics in the `loo` package and their implementation in `brms` to compare the `mod` and `mod2`. Given the conclusions are either that the models are not distinguishable (boldness), or that the simplest is better (fpt), we choose to carry on with the simplest one only as we originally planned:
+
+```{r loo-compare}
+loo1=loo(mod,resp="boldness2") 
+## note that it may throw warnings, in that case, consider kfold(), but the conclusions should be similar
+loo2=loo(mod2,resp="boldness2")
+loo_compare(loo1,loo2)
+
+loo1=loo(mod,resp="fpt")
+loo2=loo(mod2,resp="fpt")
+loo_compare(loo1,loo2)
+```
 
 # Postprocessing : plots and summaries
 
@@ -227,6 +256,9 @@ ppc_ribbon(yrep=predict(mod,newdata=data[1:720,],resp="boldness2",summary=FALSE)
            y=data$boldness2[1:720],
            prob = 0.5, prob_outer=0.95)
 ```
+
+
+
 
 ## Making figures
 
@@ -502,7 +534,7 @@ save(list="vc_obs", file=here("R_output","obs_varcomps.Rdata"))
 vc_obs %>% pivot_longer(VF:VP) %>% group_by(trait,type,name) %>% mean_hdi(value)
 ```
 
-If you poke around, you may notice that the VP you get here is higher than what you'd obtain using var(observations). This is normal, because censoring artificially limits the latter. The former is closer to what we'd actually have observed if we could have observed all snails until they expressed the behaviour of interest (in theory at least).
+If you poke around, you may notice that the VP you get here is higher than what you'd obtain simply by doing var(observations). This is normal, because censoring artificially limits the latter. The former is closer to what we'd actually have observed if we could have observed all snails until they expressed the behaviour of interest (in theory at least).
 
 We extract information on repeatabilities on the way:
 
@@ -530,7 +562,7 @@ vc_obs %>%
   pivot_longer(cols=c(VF:VBint,VD),names_to = "varcomp" , values_to = "variance") %>% 
   mutate(varcomp=fct_relevel(varcomp,c("VD","VIint","VI","VBint","VB","VFstate","VF"))) %>% 
   ggplot()+
-  stat_halfeyeh(aes(y=varcomp,x=100*variance/VP),
+  stat_halfeye(aes(y=varcomp,x=100*variance/VP),
                 point_interval = mean_hdi,.width = 0.001,
                 normalize="xy")+
   facet_wrap(~trait)+
@@ -549,6 +581,39 @@ vc_obs %>%
   background_grid(colour.major = "grey95",colour.minor = "grey95")
 ```
 
+## Cross-environmental correlation
+
+It may also be interesting to see whether the individual variance $V_{I}$ in exploration varies across the temperature gradient, and if it does, whether it varies so strongly that it results in rank reversals. The low random slope variance indicates it is unlikely to do so, but to check this more rigorously, we can use the tool proposed in Brommer 2013 (doi: 10.1007/s00265-013-1603-9)(We're going to do that on the latent-scale only, however)
+
+```{r}
+phi <- matrix(c(1,1,range(data$s_temp)),nrow=2) 
+
+# phi is a matrix including the two extreme positions on the environmental gradient we want to contrast
+
+#then we need the individual latent covariance matrix, and to apply equations (4) to (6) in Brommer 2013
+
+test=VarCorr(mod,summary=FALSE)$id$cov %>%   
+  array_tree(margin=1) %>% 
+  tibble() %>% 
+  rename(VCV=".") %>% 
+  mutate(r_cross=map(.x=VCV,
+                     .f=function(VCV=.x,PHI=phi){
+                       P = PHI  %*% VCV[1:2,1:2] %*% t(PHI) ## equation (4)
+                       return(P[1,2]/sqrt(P[1,1]*P[2,2]))   ## equation (5 and 6)
+                     })) %>%
+  mutate(Vi_ratio=map(.x=VCV,
+                     .f=function(VCV=.x,PHI=phi){
+                       P = PHI  %*% VCV[1:2,1:2] %*% t(PHI)
+                       return(P[1,1]/P[2,2])     ##based on equation (5)
+                     })) %>% 
+  unnest(c(r_cross,Vi_ratio) )
+  
+  
+  mean_hdi(test$r_cross)
+  mean_hdi(test$Vi_ratio)
+```
+
+Our `r_cross` metric here is the cross-environmental correlation, while our `Vi_ratio` is the ratio $\frac{V_{I[lowestT]}}{V_{I[highestT]}}$ (on the latent scale).
 
 ### Figure 4
 

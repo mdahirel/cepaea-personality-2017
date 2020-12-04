@@ -241,6 +241,43 @@ summary_mod <- mod %>%
 mcmc_rank_overlay(mod, pars = summary_mod$name)
 ```
 
+We can "uncenter" the fixed effects predictor to get back morph specific intercepts and temperature slopes:
+
+```{r morph-specific_fixef}
+p_scaling<-data %>% 
+  select(band_phenotype,is0b,is3b,is5b) %>% 
+  distinct()
+
+is3b_if0<-(filter(p_scaling,band_phenotype=="0b")$is3b)
+is3b_if3<-(filter(p_scaling,band_phenotype=="3b")$is3b)
+is3b_if5<-(filter(p_scaling,band_phenotype=="5b")$is3b)
+
+is5b_if0<-(filter(p_scaling,band_phenotype=="0b")$is5b)
+is5b_if3<-(filter(p_scaling,band_phenotype=="3b")$is5b)
+is5b_if5<-(filter(p_scaling,band_phenotype=="5b")$is5b)
+
+fixef(mod,summary=FALSE) %>% 
+  as.data.frame() %>% 
+  mutate(bold_intercept_0b = boldness2_Intercept + (is3b_if0)*boldness2_is3b + (is5b_if0)*boldness2_is5b,
+         bold_intercept_3b = boldness2_Intercept + (is3b_if3)*boldness2_is3b + (is5b_if3)*boldness2_is5b,
+         bold_intercept_5b = boldness2_Intercept + (is3b_if5)*boldness2_is3b + (is5b_if5)*boldness2_is5b,
+         fpt_intercept_0b = fpt_Intercept + (is3b_if0)*fpt_is3b + (is5b_if0)*fpt_is5b,
+         fpt_intercept_3b = fpt_Intercept + (is3b_if3)*fpt_is3b + (is5b_if3)*fpt_is5b,
+         fpt_intercept_5b = fpt_Intercept + (is3b_if5)*fpt_is3b + (is5b_if5)*fpt_is5b,
+         fpt_slope_0b = fpt_s_temp + (is3b_if0)*`fpt_is3b:s_temp` + (is5b_if0)*`fpt_is5b:s_temp`,
+         fpt_slope_3b = fpt_s_temp + (is3b_if3)*`fpt_is3b:s_temp` + (is5b_if3)*`fpt_is5b:s_temp`,
+         fpt_slope_5b = fpt_s_temp + (is3b_if5)*`fpt_is3b:s_temp` + (is5b_if5)*`fpt_is5b:s_temp`) %>% 
+  select(bold_intercept_0b:fpt_slope_5b) %>% 
+  mutate(bold_diff_35 = bold_intercept_3b - bold_intercept_5b, #the 0 vs 3 and 0 vs 5 contrasts are already in the model summary
+         fpt_diff_35 = fpt_intercept_3b - fpt_intercept_5b,
+         fpt_diffslope_35 = fpt_slope_3b - fpt_slope_5b) %>% 
+  mutate(.iteration = 1:dim(.)[1]) %>% 
+  pivot_longer(-.iteration) %>% 
+  group_by(name) %>% 
+  mean_hdi()
+```
+(we also, at the same time, collect the 3 vs 5 contrasts in intercept and slopes, as they are not readily available from the summaries printed before)
+
 We then do some posterior predictive checks:
 
 ```{r pp_checks}
@@ -592,7 +629,7 @@ phi <- matrix(c(1,1,range(data$s_temp)),nrow=2)
 
 #then we need the individual latent covariance matrix, and to apply equations (4) to (6) in Brommer 2013
 
-test=VarCorr(mod,summary=FALSE)$id$cov %>%   
+across_envts=VarCorr(mod,summary=FALSE)$id$cov %>%   
   array_tree(margin=1) %>% 
   tibble() %>% 
   rename(VCV=".") %>% 
@@ -609,8 +646,8 @@ test=VarCorr(mod,summary=FALSE)$id$cov %>%
   unnest(c(r_cross,Vi_ratio) )
   
   
-  mean_hdi(test$r_cross)
-  mean_hdi(test$Vi_ratio)
+  mean_hdi(across_envts$r_cross)
+  mean_hdi(across_envts$Vi_ratio)
 ```
 
 Our `r_cross` metric here is the cross-environmental correlation, while our `Vi_ratio` is the ratio $\frac{V_{I[lowestT]}}{V_{I[highestT]}}$ (on the latent scale).
